@@ -101,6 +101,7 @@ Private macros
 #define APP_LED_URI_PATH                        "/led"
 #define APP_TEMP_URI_PATH                       "/temp"
 #define APP_SINK_URI_PATH                       "/sink"
+#define APP_CNT_URI_PATH  						"/cnt"
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -158,6 +159,7 @@ Public global variables declarations
 const coapUriPath_t gAPP_LED_URI_PATH  = {SizeOfString(APP_LED_URI_PATH), (uint8_t *)APP_LED_URI_PATH};
 const coapUriPath_t gAPP_TEMP_URI_PATH = {SizeOfString(APP_TEMP_URI_PATH), (uint8_t *)APP_TEMP_URI_PATH};
 const coapUriPath_t gAPP_SINK_URI_PATH = {SizeOfString(APP_SINK_URI_PATH), (uint8_t *)APP_SINK_URI_PATH};
+const coapUriPath_t gAPP_CNT_URI_PATH = {SizeOfString(APP_CNT_URI_PATH), (uint8_t *)APP_CNT_URI_PATH};
 #if LARGE_NETWORK
 const coapUriPath_t gAPP_RESET_URI_PATH = {SizeOfString(APP_RESET_TO_FACTORY_URI_PATH), (uint8_t *)APP_RESET_TO_FACTORY_URI_PATH};
 #endif
@@ -179,6 +181,9 @@ ipAddr_t gCoapDestAddress;
 /* Application timer Id */
 tmrTimerID_t mAppTimerId = gTmrInvalidTimerID_c;
 
+/* Example client timer Id */
+tmrTimerID_t mClientTimerId = gTmrInvalidTimerID_c;
+
 #if APP_AUTOSTART
 tmrTimerID_t tmrStartApp = gTmrInvalidTimerID_c;
 #endif
@@ -189,6 +194,8 @@ uint32_t leaderLedTimestamp = 0;
 taskMsgQueue_t *mpAppThreadMsgQueue = NULL;
 
 extern bool_t gEnable802154TxLed;
+
+ipAddr_t         ServerIpAddr;
 
 /*==================================================================================================
 Public functions
@@ -558,6 +565,75 @@ static void App_JoinTimerCallback
     }
 }
 
+static void App_CountCallback
+(
+    coapSessionStatus_t sessionStatus,
+    void *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    char remoteAddrStr[INET6_ADDRSTRLEN];
+    uint8_t temp[10];
+
+    if(gCoapSuccess_c == sessionStatus)
+    {
+        ntop(AF_INET6, &pSession->remoteAddr, remoteAddrStr, INET6_ADDRSTRLEN);
+        /* coap rsp from <IP addr>: <ACK> <rspcode: X.XX> <payload ASCII> */
+        shell_printf("coap rsp from ");
+        shell_printf(remoteAddrStr);
+
+        if (gCoapAcknowledgement_c == pSession->msgType)
+        {
+            shell_printf(" ACK ");
+        }
+
+        if(0 != dataLen)
+        {
+            temp[dataLen]='\0';
+            FLib_MemCpy(temp, pData, dataLen);
+            shell_printf((char *)temp);
+        }
+    }
+    else
+    {
+        shell_printf("No response received!");
+    }
+    shell_printf("\r\n");
+}
+
+static void App_GetCountCallback
+(
+    void *param
+)
+{
+	coapSession_t *pSession = COAP_OpenSession(mAppCoapInstId);
+
+	if(pSession)
+	{
+		coapMsgTypesAndCodes_t coapMessageType;
+
+		pSession->pCallback = NULL;
+		FLib_MemCpy(&pSession->remoteAddr, &ServerIpAddr, sizeof(ipAddr_t));
+		COAP_SetUriPath(pSession,(coapUriPath_t *)&gAPP_CNT_URI_PATH);
+
+		coapMessageType = gCoapMsgTypeConGet_c;
+		pSession->pCallback = App_CountCallback;
+		COAP_Send(pSession, coapMessageType, NULL, 0);
+	}
+}
+
+
+static void App_GetCountTimeCallback
+(
+    void *param
+)
+{
+	(void)NWKU_SendMsg(App_GetCountCallback, NULL, mpAppThreadMsgQueue);
+}
+
+
+
 /*!*************************************************************************************************
 \private
 \fn     static void APP_ConfigModeSwShortPressHandler(uint32_t keyEvent)
@@ -688,12 +764,29 @@ static void APP_AppModeHandleKeyboard
     {
         case gKBD_EventPB1_c:
             /* Data sink create */
-            (void)NWKU_SendMsg(APP_SendDataSinkCreate, NULL, mpAppThreadMsgQueue);
+            //(void)NWKU_SendMsg(APP_SendDataSinkCreate, NULL, mpAppThreadMsgQueue);
+            if(mClientTimerId == gTmrInvalidTimerID_c)
+            {
+            	mClientTimerId = TMR_AllocateTimer();
+            }
+
+            /* Validate client timer Id */
+            if(mClientTimerId != gTmrInvalidTimerID_c)
+            {
+                /* Start the application timer. Wait gAppJoinTimeout_c to start the joining procedure */
+            	TMR_StartIntervalTimer(mClientTimerId, 1000, App_GetCountTimeCallback, NULL);
+            }
             break;
 #if gKBD_KeysCount_c > 1
         case gKBD_EventPB2_c:
             /* Report temperature */
-            (void)NWKU_SendMsg(APP_ReportTemp, NULL, mpAppThreadMsgQueue);
+            //(void)NWKU_SendMsg(APP_ReportTemp, NULL, mpAppThreadMsgQueue);
+            if(mClientTimerId != gTmrInvalidTimerID_c)
+            {
+            	TMR_StopTimer(mClientTimerId);
+            	TMR_FreeTimer(mClientTimerId);
+            	mClientTimerId = gTmrInvalidTimerID_c;
+            }
             break;
         case gKBD_EventPB3_c:
             /* Remote led RGB - on */
@@ -1006,7 +1099,7 @@ static void APP_SendLedCommand
 {
     ifHandle_t ifHandle = THR_GetIpIfPtrByInstId(mThrInstanceId);
 
-    if(!IP_IF_IsMyAddr(ifHandle->ifUniqueId, &gCoapDestAddress))
+    if(!IP_IF_IsMyAddr(ifHandle->ifUniqueId, &ServerIpAddr))
     {
         coapSession_t *pSession = COAP_OpenSession(mAppCoapInstId);
 
@@ -1015,10 +1108,10 @@ static void APP_SendLedCommand
             coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
 
             pSession->pCallback = NULL;
-            FLib_MemCpy(&pSession->remoteAddr, &gCoapDestAddress, sizeof(ipAddr_t));
+            FLib_MemCpy(&pSession->remoteAddr, &ServerIpAddr, sizeof(ipAddr_t));
             COAP_SetUriPath(pSession,(coapUriPath_t *)&gAPP_LED_URI_PATH);
 
-            if(!IP6_IsMulticastAddr(&gCoapDestAddress))
+            if(!IP6_IsMulticastAddr(&ServerIpAddr))
             {
                 coapMessageType = gCoapMsgTypeConPost_c;
                 pSession->pCallback = APP_CoapGenericCallback;
