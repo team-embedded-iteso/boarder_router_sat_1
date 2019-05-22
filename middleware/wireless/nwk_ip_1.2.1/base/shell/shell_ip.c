@@ -228,6 +228,7 @@ static void SHELL_CoapAckReceive(coapSessionStatus_t sessionStatus, void *pData,
 /* Ping functions */
 static int8_t SHELL_Ping(uint8_t argc, char *argv[]);
 static int8_t SHELL_Ssip(uint8_t argc, char *argv[]);
+static int8_t SHELL_Gsip(uint8_t argc, char *argv[]);
 static ipPktInfo_t *PING_CreatePktInfo(ipAddr_t *pDstAddr, uint32_t payloadLen);
 static void PING_EchoReplyReceiveAsync(ipPktInfo_t *pRxIpPktInfo);
 static void PING_EchoReplyReceive(void *pParam);
@@ -305,6 +306,7 @@ static ipIfUniqueId_t   mPingInterfaceId = gIpIfUndef_c;
 
 static tmrTimerID_t     mDelayTimerID = gTmrInvalidTimerID_c;
 static char             mAddrStr[INET6_ADDRSTRLEN];
+static char             ServerIPaddrStr[INET6_ADDRSTRLEN];
 static tmrTimerID_t     mTimerIDSelect = gTmrInvalidTimerID_c;
 
 static bool_t           mShellCommandsEnabled = FALSE;    /*!< Avoid initializing the module multiple times */
@@ -433,6 +435,18 @@ const cmd_tbl_t aShellCommands[] =
         ,NULL
 #endif /* SHELL_USE_AUTO_COMPLETE */
     },
+	{
+			"gsip", SHELL_CMD_MAX_ARGS, 0, SHELL_Gsip
+	#if SHELL_USE_HELP
+	        ,"Get server IP",
+	        "Used to get the IPV6 of the example server \r\n"
+	        "   gsip <ip address>\r\n"
+	#endif /* SHELL_USE_HELP */
+	#if SHELL_USE_AUTO_COMPLETE
+	        ,NULL
+	#endif /* SHELL_USE_AUTO_COMPLETE */
+	    },
+
 #if DNS_ENABLED
     {
         "dnsrequest", SHELL_CMD_MAX_ARGS, 0, SHELL_SendDns
@@ -3712,6 +3726,32 @@ static int8_t SHELL_Ssip
         	shell_write("Server IP address set");
         }
     } /* Correct number of arguments */
+
+    return ret;
+}
+
+
+/*!*************************************************************************************************
+\private
+\fn     static int8_t  SHELL_Ssip(uint8_t argc, char *argv[])
+\brief  This function is used for setting the example server IP
+
+\param  [in]    argc      Number of arguments the command was called with
+\param  [in]    argv      Pointer to a list of pointers to the arguments
+
+\return         int8_t    Status of the command
+***************************************************************************************************/
+static int8_t SHELL_Gsip
+(
+    uint8_t argc,
+    char *argv[]
+)
+{
+    command_ret_t ret = CMD_RET_SUCCESS;
+
+    /* Check number of arguments according to the shellComm table */
+    ntop(AF_INET6, &ServerIpAddr, ServerIPaddrStr, INET6_ADDRSTRLEN);
+    shell_printf("\n\r\tLink local all Thread Nodes(MCast):  %s", ServerIPaddrStr);
 
     return ret;
 }
