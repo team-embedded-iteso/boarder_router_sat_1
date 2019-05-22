@@ -228,6 +228,7 @@ static void SHELL_CoapAckReceive(coapSessionStatus_t sessionStatus, void *pData,
 /* Ping functions */
 static int8_t SHELL_Ping(uint8_t argc, char *argv[]);
 static int8_t SHELL_Ssip(uint8_t argc, char *argv[]);
+static int8_t SHELL_SetDestinationIp(uint8_t argc, char *argv[]);
 static ipPktInfo_t *PING_CreatePktInfo(ipAddr_t *pDstAddr, uint32_t payloadLen);
 static void PING_EchoReplyReceiveAsync(ipPktInfo_t *pRxIpPktInfo);
 static void PING_EchoReplyReceive(void *pParam);
@@ -319,6 +320,7 @@ Public global variables declarations
 ==================================================================================================*/
 
 extern ipAddr_t         ServerIpAddr;
+extern ipAddr_t         DestinationIpAddr;
 
 const cmd_tbl_t aShellCommands[] =
 {
@@ -428,6 +430,17 @@ const cmd_tbl_t aShellCommands[] =
         ,"Set server IP",
         "Used to provide an IPV6 of the example server \r\n"
         "   ssip <ip address>\r\n"
+#endif /* SHELL_USE_HELP */
+#if SHELL_USE_AUTO_COMPLETE
+        ,NULL
+#endif /* SHELL_USE_AUTO_COMPLETE */
+    },
+    {
+        "setDestinationIp", SHELL_CMD_MAX_ARGS, 0, SHELL_SetDestinationIp
+#if SHELL_USE_HELP
+        ,"Set Destination IP",
+        "Used to provide an IPV6 of the destination for our message \r\n"
+        "   SHELL_SetDestinationIp <ip address>\r\n"
 #endif /* SHELL_USE_HELP */
 #if SHELL_USE_AUTO_COMPLETE
         ,NULL
@@ -3699,6 +3712,71 @@ static int8_t SHELL_Ssip
 		}
 
 		if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &ServerIpAddr)))
+		{
+			validDstIpAddr = TRUE;
+		}
+
+        if (!validDstIpAddr)
+        {
+            shell_write("Invalid destination IP address");
+            return CMD_RET_FAILURE;
+        }
+        else {
+        	shell_write("Server IP address set");
+        }
+    } /* Correct number of arguments */
+
+    return ret;
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static int8_t  SHELL_SetDestinationIp(uint8_t argc, char *argv[])
+\brief  This function is used for setting the example server IP
+
+\param  [in]    argc      Number of arguments the command was called with
+\param  [in]    argv      Pointer to a list of pointers to the arguments
+
+\return         int8_t    Status of the command
+***************************************************************************************************/
+static int8_t SHELL_SetDestinationIp
+(
+    uint8_t argc,
+    char *argv[]
+)
+{
+    command_ret_t ret = CMD_RET_SUCCESS;
+    uint8_t ap = AF_UNSPEC;
+    bool_t validDstIpAddr = FALSE;
+
+    /* Stop infinite ping */
+    if(argc == 1)
+    {
+    	shell_write("Provide an IP!");
+    }
+    /* Check number of arguments according to the shellComm table */
+    else
+    {
+        /* Check if the destination IPv4/IPv6 address is valid */
+		/* Verify IP address (v4 or v6) */
+		uint8_t *pText = (uint8_t *)argv[1];
+
+		while (*pText != '\0')
+		{
+			if (*pText == '.')
+			{
+				ap = AF_INET;
+				break;
+			}
+			if (*pText == ':')
+			{
+				ap = AF_INET6;
+				break;
+			}
+			pText++;
+		}
+
+		if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &DestinationIpAddr)))
 		{
 			validDstIpAddr = TRUE;
 		}
