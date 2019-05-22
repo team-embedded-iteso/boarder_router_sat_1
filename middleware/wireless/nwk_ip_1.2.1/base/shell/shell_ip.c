@@ -230,6 +230,7 @@ static int8_t SHELL_Ping(uint8_t argc, char *argv[]);
 static int8_t SHELL_Ssip(uint8_t argc, char *argv[]);
 static int8_t SHELL_Gsip(uint8_t argc, char *argv[]);
 static int8_t SHELL_SetDestinationIp(uint8_t argc, char *argv[]);
+static int8_t SHELL_Gdip(uint8_t argc, char *argv[]);
 static ipPktInfo_t *PING_CreatePktInfo(ipAddr_t *pDstAddr, uint32_t payloadLen);
 static void PING_EchoReplyReceiveAsync(ipPktInfo_t *pRxIpPktInfo);
 static void PING_EchoReplyReceive(void *pParam);
@@ -460,6 +461,17 @@ const cmd_tbl_t aShellCommands[] =
 	        ,NULL
 	#endif /* SHELL_USE_AUTO_COMPLETE */
 	    },
+		{
+			"gdip", SHELL_CMD_MAX_ARGS, 0, SHELL_Gdip
+	#if SHELL_USE_HELP
+			,"Get destination IP",
+			"Used to get the IPV6 of the example destination \r\n"
+			"   gdip <ip address>\r\n"
+	#endif /* SHELL_USE_HELP */
+	#if SHELL_USE_AUTO_COMPLETE
+			,NULL
+	#endif /* SHELL_USE_AUTO_COMPLETE */
+		},
 #if DNS_ENABLED
     {
         "dnsrequest", SHELL_CMD_MAX_ARGS, 0, SHELL_SendDns
@@ -3764,7 +3776,7 @@ static int8_t SHELL_Gsip
 
     /* Check number of arguments according to the shellComm table */
     ntop(AF_INET6, &ServerIpAddr, ServerIPaddrStr, INET6_ADDRSTRLEN);
-    shell_printf("\n\r\tLink local all Thread Nodes(MCast):  %s", ServerIPaddrStr);
+    shell_printf("\n\r\tServer IP (IPv6):  %s", ServerIPaddrStr);
 
     return ret;
 }
@@ -3833,6 +3845,30 @@ static int8_t SHELL_SetDestinationIp
 }
 
 
+/*!*************************************************************************************************
+\private
+\fn     static int8_t  SHELL_Gdip(uint8_t argc, char *argv[])
+\brief  This function is used for setting the example server IP
+
+\param  [in]    argc      Number of arguments the command was called with
+\param  [in]    argv      Pointer to a list of pointers to the arguments
+
+\return         int8_t    Status of the command
+***************************************************************************************************/
+static int8_t SHELL_Gdip
+(
+    uint8_t argc,
+    char *argv[]
+)
+{
+    command_ret_t ret = CMD_RET_SUCCESS;
+
+    /* Check number of arguments according to the shellComm table */
+    ntop(AF_INET6, &DestinationIpAddr, DestinationIPaddrStr, INET6_ADDRSTRLEN);
+    shell_printf("\n\r\tDestination IP: (IPv6):  %s", DestinationIPaddrStr);
+
+    return ret;
+}
 
 
 
