@@ -196,6 +196,8 @@ taskMsgQueue_t *mpAppThreadMsgQueue = NULL;
 extern bool_t gEnable802154TxLed;
 
 ipAddr_t         ServerIpAddr;
+ipAddr_t         DestinationIpAddr;
+
 
 /*==================================================================================================
 Public functions
