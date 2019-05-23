@@ -322,7 +322,9 @@ Public global variables declarations
 extern ipAddr_t         ServerIpAddr;
 
 extern ipAddr_t         DestinationAIpAddr;
+bool desta = FALSE;
 extern ipAddr_t         DestinationBIpAddr;
+bool destb = FALSE;
 
 const cmd_tbl_t aShellCommands[] =
 {
@@ -3778,33 +3780,30 @@ static int8_t SHELL_SetDestinationIp
 			pText++;
 		}
 
-        char addrStrA[INET6_ADDRSTRLEN];
-        char addrStrB[INET6_ADDRSTRLEN];
-
-        ntop(AF_INET6, &DestinationAIpAddr, addrStrA, INET6_ADDRSTRLEN);
-        ntop(AF_INET6, &DestinationBIpAddr, addrStrB, INET6_ADDRSTRLEN);
-
-        if (addrStrA == NULL)
+        if (desta == FALSE)
         {
             if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &DestinationAIpAddr)))
             {
                 validDstIpAddr = TRUE;
+                desta = true;
+            	shell_write("DestinationA address set");
+
             }
         }
-        else if (addrStrB == NULL)
+        else if (destb == FALSE)
         {
             if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &DestinationBIpAddr)))
             {
                 validDstIpAddr = TRUE;
+                destb = true;
+            	shell_write("DestinationB address set");
+
             }
         }
         if (!validDstIpAddr)
         {
             shell_write("Invalid destination IP address");
             return CMD_RET_FAILURE;
-        }
-        else {
-        	shell_write("Server IP address set");
         }
     } /* Correct number of arguments */
 

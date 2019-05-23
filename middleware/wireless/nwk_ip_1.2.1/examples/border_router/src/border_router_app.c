@@ -780,17 +780,19 @@ static void APP_AppModeHandleKeyboard
         case gKBD_EventPB1_c:
             /* Data sink create */
             //(void)NWKU_SendMsg(APP_SendDataSinkCreate, NULL, mpAppThreadMsgQueue);
-            if(mClientTimerId == gTmrInvalidTimerID_c)
-            {
-            	mClientTimerId = TMR_AllocateTimer();
-            }
+            (void)NWKU_SendMsg(APP_VerifyIP, NULL, mpAppThreadMsgQueue);
 
-            /* Validate client timer Id */
-            if(mClientTimerId != gTmrInvalidTimerID_c)
-            {
-                /* Start the application timer. Wait gAppJoinTimeout_c to start the joining procedure */
-            	TMR_StartIntervalTimer(mClientTimerId, 1000, App_GetCountTimeCallback, NULL);
-            }
+            // if(mClientTimerId == gTmrInvalidTimerID_c)
+            // {
+            // 	mClientTimerId = TMR_AllocateTimer();
+            // }
+
+            // /* Validate client timer Id */
+            // if(mClientTimerId != gTmrInvalidTimerID_c)
+            // {
+            //     /* Start the application timer. Wait gAppJoinTimeout_c to start the joining procedure */
+            // 	TMR_StartIntervalTimer(mClientTimerId, 1000, App_GetCountTimeCallback, NULL);
+            // }
             break;
 #if gKBD_KeysCount_c > 1
         case gKBD_EventPB2_c:
