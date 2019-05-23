@@ -320,7 +320,9 @@ Public global variables declarations
 ==================================================================================================*/
 
 extern ipAddr_t         ServerIpAddr;
-extern ipAddr_t         DestinationIpAddr;
+
+extern ipAddr_t         DestinationAIpAddr;
+extern ipAddr_t         DestinationBIpAddr;
 
 const cmd_tbl_t aShellCommands[] =
 {
@@ -3776,11 +3778,26 @@ static int8_t SHELL_SetDestinationIp
 			pText++;
 		}
 
-		if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &DestinationIpAddr)))
-		{
-			validDstIpAddr = TRUE;
-		}
+        char addrStrA[INET6_ADDRSTRLEN];
+        char addrStrB[INET6_ADDRSTRLEN];
 
+        ntop(AF_INET6, &DestinationAIpAddr, addrStrA, INET6_ADDRSTRLEN);
+        ntop(AF_INET6, &DestinationBIpAddr, addrStrB, INET6_ADDRSTRLEN);
+
+        if (addrStrA == NULL)
+        {
+            if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &DestinationAIpAddr)))
+            {
+                validDstIpAddr = TRUE;
+            }
+        }
+        else if (addrStrB == NULL)
+        {
+            if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &DestinationBIpAddr)))
+            {
+                validDstIpAddr = TRUE;
+            }
+        }
         if (!validDstIpAddr)
         {
             shell_write("Invalid destination IP address");

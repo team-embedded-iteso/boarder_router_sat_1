@@ -100,6 +100,7 @@ Private macros
 
 #define APP_LED_URI_PATH                        "/led"
 #define APP_TEMP_URI_PATH                       "/temp"
+#define APP_VER_URI_PATH                        "/ver"
 #define APP_SINK_URI_PATH                       "/sink"
 #define APP_CNT_URI_PATH  						"/cnt"
 #if LARGE_NETWORK
@@ -135,6 +136,10 @@ static void APP_SendDataSinkRelease(void *pParam);
 static void APP_SendLedRgbOn(void *pParam);
 static void APP_SendLedRgbOff(void *pParam);
 static void APP_SendLedFlash(void *pParam);
+static void APP_SendLedFlashA(void *pParam);
+static void APP_SendLedFlashB(void *pParam);
+static void APP_VerifyIP(void *pParam);
+
 static void APP_SendLedColorWheel(void *pParam);
 #endif
 static void APP_LocalDataSinkRelease(void *pParam);
@@ -142,6 +147,8 @@ static void APP_ProcessLedCmd(uint8_t *pCommand, uint8_t dataLen);
 static void APP_CoapGenericCallback(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapLedCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapTempCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
+static void APP_CoapVerCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
+static void APP_VerifyIP(void *pParam);
 static void APP_CoapSinkCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void App_RestoreLeaderLed(void *param);
 #if LARGE_NETWORK
@@ -158,6 +165,7 @@ Public global variables declarations
 ==================================================================================================*/
 const coapUriPath_t gAPP_LED_URI_PATH  = {SizeOfString(APP_LED_URI_PATH), (uint8_t *)APP_LED_URI_PATH};
 const coapUriPath_t gAPP_TEMP_URI_PATH = {SizeOfString(APP_TEMP_URI_PATH), (uint8_t *)APP_TEMP_URI_PATH};
+const coapUriPath_t gAPP_VER_URI_PATH = {SizeOfString(APP_VER_URI_PATH), (uint8_t *)APP_VER_URI_PATH};
 const coapUriPath_t gAPP_SINK_URI_PATH = {SizeOfString(APP_SINK_URI_PATH), (uint8_t *)APP_SINK_URI_PATH};
 const coapUriPath_t gAPP_CNT_URI_PATH = {SizeOfString(APP_CNT_URI_PATH), (uint8_t *)APP_CNT_URI_PATH};
 #if LARGE_NETWORK
@@ -196,6 +204,11 @@ taskMsgQueue_t *mpAppThreadMsgQueue = NULL;
 extern bool_t gEnable802154TxLed;
 
 ipAddr_t         ServerIpAddr;
+ipAddr_t         DestinationAIpAddr;
+ipAddr_t         DestinationBIpAddr;
+
+bool            allowed_Message1;
+bool            allowed_Message2;
 
 /*==================================================================================================
 Public functions
@@ -516,6 +529,8 @@ static void APP_InitCoapDemo
 {
     coapRegCbParams_t cbParams[] =  {{APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
                                      {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
+                                     {APP_CoapVerCb, (coapUriPath_t *)&gAPP_VER_URI_PATH},
+
 #if LARGE_NETWORK
                                      {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
 #endif
@@ -808,7 +823,8 @@ static void APP_AppModeHandleKeyboard
             break;
         case gKBD_EventLongPB3_c:
             /* Remote led flash */
-            (void)NWKU_SendMsg(APP_SendLedFlash, NULL, mpAppThreadMsgQueue);
+            //(void)NWKU_SendMsg(APP_SendLedFlash, NULL, mpAppThreadMsgQueue);
+            (void)NWKU_SendMsg(APP_VerifyIP, NULL, mpAppThreadMsgQueue);
             break;
         case gKBD_EventLongPB4_c:
             /* Remote led - color wheel */
@@ -1131,6 +1147,144 @@ static void APP_SendLedCommand
 
 /*!*************************************************************************************************
 \private
+\fn     static void APP_SendLedCommand(uint8_t *pCommand, uint8_t dataLen)
+\brief  This function is used to send a Led command to gCoapDestAddress.
+
+\param  [in]    pCommand    Pointer to command data
+\param  [in]    dataLen     Data length
+***************************************************************************************************/
+static void APP_SendLedCommandA
+(
+    uint8_t *pCommand,
+    uint8_t dataLen
+)
+{
+    ifHandle_t ifHandle = THR_GetIpIfPtrByInstId(mThrInstanceId);
+
+    if(!IP_IF_IsMyAddr(ifHandle->ifUniqueId, &DestinationAIpAddr))
+    {
+        coapSession_t *pSession = COAP_OpenSession(mAppCoapInstId);
+
+        if(pSession)
+        {
+            coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
+
+            pSession->pCallback = NULL;
+            FLib_MemCpy(&pSession->remoteAddr, &DestinationAIpAddr, sizeof(ipAddr_t));
+            COAP_SetUriPath(pSession,(coapUriPath_t *)&gAPP_LED_URI_PATH);
+
+            if(!IP6_IsMulticastAddr(&DestinationAIpAddr))
+            {
+                coapMessageType = gCoapMsgTypeConPost_c;
+                pSession->pCallback = APP_CoapGenericCallback;
+            }
+            else
+            {
+                APP_ProcessLedCmd(pCommand, dataLen);
+            }
+            COAP_Send(pSession, coapMessageType, pCommand, dataLen);
+        }
+    }
+    else
+    {
+        APP_ProcessLedCmd(pCommand, dataLen);
+    }
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_SendLedCommand(uint8_t *pCommand, uint8_t dataLen)
+\brief  This function is used to send a Led command to gCoapDestAddress.
+
+\param  [in]    pCommand    Pointer to command data
+\param  [in]    dataLen     Data length
+***************************************************************************************************/
+static void APP_SendLedCommandB
+(
+    uint8_t *pCommand,
+    uint8_t dataLen
+)
+{
+    ifHandle_t ifHandle = THR_GetIpIfPtrByInstId(mThrInstanceId);
+
+    if(!IP_IF_IsMyAddr(ifHandle->ifUniqueId, &DestinationBIpAddr))
+    {
+        coapSession_t *pSession = COAP_OpenSession(mAppCoapInstId);
+
+        if(pSession)
+        {
+            coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
+
+            pSession->pCallback = NULL;
+            FLib_MemCpy(&pSession->remoteAddr, &DestinationBIpAddr, sizeof(ipAddr_t));
+            COAP_SetUriPath(pSession,(coapUriPath_t *)&gAPP_LED_URI_PATH);
+
+            if(!IP6_IsMulticastAddr(&DestinationBIpAddr))
+            {
+                coapMessageType = gCoapMsgTypeConPost_c;
+                pSession->pCallback = APP_CoapGenericCallback;
+            }
+            else
+            {
+                APP_ProcessLedCmd(pCommand, dataLen);
+            }
+            COAP_Send(pSession, coapMessageType, pCommand, dataLen);
+        }
+    }
+    else
+    {
+        APP_ProcessLedCmd(pCommand, dataLen);
+    }
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_SendLedCommand(uint8_t *pCommand, uint8_t dataLen)
+\brief  This function is used to send a Led command to gCoapDestAddress.
+
+\param  [in]    pCommand    Pointer to command data
+\param  [in]    dataLen     Data length
+***************************************************************************************************/
+static void APP_SendVerificationCommand
+(
+    uint8_t *pCommand,
+    uint8_t dataLen
+)
+{
+    ifHandle_t ifHandle = THR_GetIpIfPtrByInstId(mThrInstanceId);
+
+    if(!IP_IF_IsMyAddr(ifHandle->ifUniqueId, &ServerIpAddr))
+    {
+        coapSession_t *pSession = COAP_OpenSession(mAppCoapInstId);
+
+        if(pSession)
+        {
+            coapMsgTypesAndCodes_t coapMessageType = gCoapMsgTypeNonPost_c;
+
+            pSession->pCallback = NULL;
+            FLib_MemCpy(&pSession->remoteAddr, &ServerIpAddr, sizeof(ipAddr_t));
+            COAP_SetUriPath(pSession,(coapUriPath_t *)&gAPP_VER_URI_PATH);
+
+            if(!IP6_IsMulticastAddr(&ServerIpAddr))
+            {
+                coapMessageType = gCoapMsgTypeConPost_c;
+                pSession->pCallback = APP_CoapVerCb;
+            }
+            else
+            {
+                //do nothing
+            }
+            COAP_Send(pSession, coapMessageType, pCommand, dataLen);
+        }
+    }
+    else
+    {
+        //do nothing        
+    }
+}
+
+/*!*************************************************************************************************
+\private
 \fn     static void APP_SendLedRgbOn(void *pParam)
 \brief  This function is used to send a Led RGB On command over the air.
 
@@ -1192,6 +1346,59 @@ static void APP_SendLedFlash
     uint8_t aCommand[] = {"flash"};
 
     APP_SendLedCommand(aCommand, sizeof(aCommand));
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_SendLedFlash(void *pParam)
+\brief  This function is used to send a Led flash command over the air.
+
+\param  [in]    pParam    Not used
+***************************************************************************************************/
+static void APP_SendLedFlashA
+(
+    void *pParam
+)
+{
+    uint8_t aCommand[] = {"flash"};
+
+    APP_SendLedCommandA(aCommand, sizeof(aCommand));
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_SendLedFlash(void *pParam)
+\brief  This function is used to send a Led flash command over the air.
+
+\param  [in]    pParam    Not used
+***************************************************************************************************/
+static void APP_SendLedFlashB
+(
+    void *pParam
+)
+{
+    uint8_t aCommand[] = {"flash"};
+
+    APP_SendLedCommandB(aCommand, sizeof(aCommand));
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_SendLedFlash(void *pParam)
+\brief  This function is used to send a Led flash command over the air.
+
+\param  [in]    pParam    Not used
+***************************************************************************************************/
+static void APP_VerifyIP
+(
+    void *pParam
+)
+{
+    char addrStrA[INET6_ADDRSTRLEN];
+
+    ntop(AF_INET6, &DestinationAIpAddr, addrStrA, INET6_ADDRSTRLEN);
+
+    APP_SendVerificationCommand(addrStrA, sizeof(addrStrA));
 }
 
 /*!*************************************************************************************************
@@ -1425,6 +1632,164 @@ static void APP_CoapTempCb
         }
         else
         {
+            COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, NULL, 0);
+        }
+    }
+
+    if(pTempString)
+    {
+        MEM_BufferFree(pTempString);
+    }
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_CoapTempCb(coapSessionStatus_t sessionStatus, void *pData,
+                                   coapSession_t *pSession, uint32_t dataLen)
+\brief  This function is the callback function for CoAP temperature message.
+\brief  It sends the temperature value in a CoAP ACK message.
+
+\param  [in]    sessionStatus   Status for CoAP session
+\param  [in]    pData           Pointer to CoAP message payload
+\param  [in]    pSession        Pointer to CoAP session
+\param  [in]    dataLen         Length of CoAP payload
+***************************************************************************************************/
+static void APP_CoapVerCb
+(
+    coapSessionStatus_t sessionStatus,
+    void *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    uint8_t *pTempString = NULL;
+    uint32_t ackPloadSize = 0, maxDisplayedString = 10;
+
+    bool allowed = false;
+    /* Send CoAP ACK */
+    if(gCoapGET_c == pSession->code)
+    {
+        if (NULL != pData)
+        {
+
+            char addrStrA[INET6_ADDRSTRLEN];
+            char addrStrB[INET6_ADDRSTRLEN];
+
+            ntop(AF_INET6, &DestinationAIpAddr, addrStrA, INET6_ADDRSTRLEN);
+            ntop(AF_INET6, &DestinationBIpAddr, addrStrB, INET6_ADDRSTRLEN);
+
+            char pTempAddr[INET6_ADDRSTRLEN];
+            ntop(AF_INET6, pData, pTempAddr, INET6_ADDRSTRLEN);
+            
+            if (strcmp(addrStrA, pTempAddr))
+            {
+                shell_write("allowed \n");
+                pTempString = (void*)"A";
+                ackPloadSize = strlen((char*)pTempString);
+            }
+            else if (strcmp(addrStrB, pTempAddr))
+            {
+                shell_write("allowed \n");
+                pTempString = (void*)"B";
+                ackPloadSize = strlen((char*)pTempString);
+            }
+            else
+            {
+                shell_write("not allowed \n");
+                pTempString = (void*)"not";
+                ackPloadSize = strlen((char*)pTempString);
+
+            }
+            
+        }
+    }
+    /* Do not parse the message if it is duplicated */
+    else if((gCoapPOST_c == pSession->code) && (sessionStatus == gCoapSuccess_c))
+    {
+        if(NULL != pData)
+        {
+            char addrStrA[INET6_ADDRSTRLEN];
+            char addrStrB[INET6_ADDRSTRLEN];
+
+            ntop(AF_INET6, &DestinationAIpAddr, addrStrA, INET6_ADDRSTRLEN);
+            ntop(AF_INET6, &DestinationBIpAddr, addrStrB, INET6_ADDRSTRLEN);
+
+            if (addrStrA == NULL)
+            {
+                pton(AF_INET6, pData, &DestinationAIpAddr);
+                char addrStr[INET6_ADDRSTRLEN];
+                ntop(AF_INET6, pData, addrStr, INET6_ADDRSTRLEN);
+                shell_write("just Registered ");
+                shell_write(addrStr);
+                shell_write("\n");
+                shell_refresh();
+            }
+            else if (addrStrB  == NULL)
+            {
+                pton(AF_INET6, pData, &DestinationBIpAddr);
+                char addrStr[INET6_ADDRSTRLEN];
+                ntop(AF_INET6, pData, addrStr, INET6_ADDRSTRLEN);
+                shell_write("just Registered ");
+                shell_write(addrStr);
+                shell_write("\n");
+                shell_refresh();
+
+            }
+            else
+            {
+                char addrStr[INET6_ADDRSTRLEN];
+                ntop(AF_INET6, &pSession->remoteAddr, addrStr, INET6_ADDRSTRLEN);
+                shell_write("can't register");
+                shell_write(addrStr);
+                shell_write("\n");
+                shell_refresh();
+            }
+
+                  
+            // char addrStr[INET6_ADDRSTRLEN];
+            // uint8_t temp[10];
+
+            // ntop(AF_INET6, &pSession->remoteAddr, addrStr, INET6_ADDRSTRLEN);
+            // shell_write("\r");
+
+            // if(0 != dataLen)
+            // {
+            //     /* Prevent from buffer overload */
+            //     (dataLen >= maxDisplayedString) ? (dataLen = (maxDisplayedString - 1)) : (dataLen);
+            //     temp[dataLen]='\0';
+            //     FLib_MemCpy(temp,pData,dataLen);
+            //     shell_printf((char*)temp);
+            // }
+            // shell_printf("\tFrom IPv6 Address: %s\n\r", addrStr);
+            // shell_refresh();
+        }
+    }
+
+    if(gCoapConfirmable_c == pSession->msgType)
+    {
+        if(gCoapGET_c == pSession->code)
+        {
+            
+            COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, pTempString, ackPloadSize);
+        }
+        else
+        {
+            if(NULL != pData)
+            {
+                if (strcmp((uint8_t*)pData, "A"))
+                {
+                    (void)NWKU_SendMsg(APP_SendLedFlashA, NULL, mpAppThreadMsgQueue);
+
+                }
+                else if (strcmp((uint8_t*)pData, "B"))
+                {
+                    (void)NWKU_SendMsg(APP_SendLedFlashB, NULL, mpAppThreadMsgQueue);
+                }
+                else if (strcmp((uint8_t*)pData, "not"))
+                {
+                    //do nothing
+                }
+            }
             COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, NULL, 0);
         }
     }
